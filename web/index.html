@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NLM</title>
+<style>
+  :root{
+    --bg:#ffffff; --side:#f9f9f9; --side-hover:#ececec; --text:#0d0d0d;
+    --muted:#8e8ea0; --border:#e5e5e5; --user-bg:#f4f4f4; --accent:#0d0d0d;
+    --accent-fg:#ffffff; --code:#f0f0f0; --overlay:rgba(0,0,0,.42); --danger:#e5484d;
+    --brand1:#8b5cf6; --brand2:#ec4899;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#212121; --side:#171717; --side-hover:#2a2a2a; --text:#ececec;
+      --muted:#9b9b9b; --border:#2f2f2f; --user-bg:#2f2f2f; --accent:#ffffff;
+      --accent-fg:#0d0d0d; --code:#2a2a2a; --overlay:rgba(0,0,0,.6); }
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; }
+  body{ font-family:"Söhne","Segoe UI",system-ui,sans-serif; background:var(--bg);
+        color:var(--text); display:flex; overflow:hidden; -webkit-font-smoothing:antialiased; }
+  button{ font:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:6px; }
+
+  /* ---------------- Sidebar ---------------- */
+  #sidebar{ width:272px; flex:none; background:var(--side); border-right:1px solid var(--border);
+            display:flex; flex-direction:column; transition:margin-left .2s; }
+  #sidebar.collapsed{ margin-left:-272px; }
+  .brand{ display:flex; align-items:center; gap:10px; padding:16px 16px 10px; font-weight:600; font-size:15px; }
+  .logo{ width:26px; height:26px; border-radius:8px; flex:none;
+         background:linear-gradient(135deg,var(--brand1),var(--brand2)); }
+  /* логотип — своя картинка вместо градиента (шапка + приветствие) */
+  .logo{ background:url('logo.png') center/cover no-repeat; position:relative; }
+  /* glow-версия лежит сверху и плавно проявляется при наведении */
+  .logo::after, .avatar::after{ content:''; position:absolute; inset:0; border-radius:inherit;
+    background:url('logo_glow.png') center/cover no-repeat; opacity:0;
+    transition:opacity .3s ease; pointer-events:none; }
+  .logo:hover::after, .avatar:hover::after{ opacity:1; }
+  /* пока модель отвечает — логотип моргает (обычная ⇄ светящаяся) */
+  body.answering .logo::after, body.answering .avatar::after{ animation:logo-blink 1s ease-in-out infinite; }
+  @keyframes logo-blink{ 0%,100%{ opacity:0 } 50%{ opacity:1 } }
+  .side-btn{ display:flex; align-items:center; gap:10px; width:calc(100% - 16px); margin:2px 8px;
+             padding:10px 12px; border-radius:10px; font-size:14px; color:var(--text); text-align:left; }
+  .side-btn:hover{ background:var(--side-hover); }
+  .side-lbl{ padding:14px 18px 6px; font-size:12px; font-weight:600; color:var(--muted);
+             text-transform:uppercase; letter-spacing:.04em; }
+  #doclist{ flex:1; overflow-y:auto; padding:0 8px 8px; }
+  .doc{ display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:10px; cursor:pointer; }
+  .doc:hover{ background:var(--side-hover); }
+  .doc .ico{ flex:none; color:var(--muted); display:flex; }
+  .doc .body{ flex:1; min-width:0; }
+  .doc .t{ font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .doc .m{ font-size:12px; color:var(--muted); }
+  .doc .del{ opacity:0; color:var(--muted); flex:none; padding:2px; border-radius:6px; }
+  .doc:hover .del{ opacity:1; }
+  .doc .del:hover{ color:var(--danger); }
+  .empty{ color:var(--muted); font-size:13px; text-align:center; padding:24px 12px; }
+  .side-foot{ border-top:1px solid var(--border); padding:6px; }
+
+  /* ---------------- Main ---------------- */
+  #main{ flex:1; display:flex; flex-direction:column; min-width:0; position:relative; }
+  .topbar{ height:52px; display:flex; align-items:center; gap:8px; padding:0 12px;
+           border-bottom:1px solid transparent; }
+  .icon-btn{ width:36px; height:36px; border-radius:9px; display:flex; align-items:center;
+             justify-content:center; color:var(--text); }
+  .icon-btn:hover{ background:var(--side-hover); }
+  .topbar .title{ font-weight:600; font-size:15px; }
+
+  #scroll{ flex:1; overflow-y:auto; }
+  #log{ max-width:760px; margin:0 auto; padding:20px 24px 40px; display:flex; flex-direction:column; gap:26px; }
+
+  /* пустой экран-приветствие */
+  #hello{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+          text-align:center; gap:14px; padding:24px; }
+  #hello .logo{ width:52px; height:52px; border-radius:15px; }
+  #hello h1{ margin:0; font-size:28px; font-weight:600; letter-spacing:-.01em; }
+  #hello p{ margin:0; color:var(--muted); font-size:15px; max-width:420px; }
+
+  /* сообщения */
+  .row{ display:flex; gap:14px; }
+  .row.user{ justify-content:flex-end; }
+  .avatar{ width:30px; height:30px; border-radius:8px; flex:none;
+           background:url('logo.png') center/cover no-repeat; position:relative; }
+  .bubble{ line-height:1.7; font-size:15px; }
+  .row.user .bubble{ background:var(--user-bg); padding:11px 16px; border-radius:18px; max-width:78%; }
+  .row.bot .bubble{ padding-top:3px; }
+  .bubble p{ margin:0 0 10px; } .bubble p:last-child{ margin:0; }
+  .bubble code{ background:var(--code); padding:2px 6px; border-radius:6px; font-size:.9em;
+                font-family:"SFMono-Regular",Consolas,monospace; }
+  /* ---- богатый текст (markdown) в чате и в просмотре документа ---- */
+  .bubble h1,.bubble h2,.bubble h3,.bubble h4,.doc-text h1,.doc-text h2,.doc-text h3,.doc-text h4{
+    margin:1.1em 0 .5em; line-height:1.3; font-weight:650; }
+  .bubble h1,.doc-text h1{ font-size:1.5em; }
+  .bubble h2,.doc-text h2{ font-size:1.3em; }
+  .bubble h3,.doc-text h3{ font-size:1.13em; }
+  .bubble h4,.doc-text h4{ font-size:1em; }
+  .bubble > :first-child,.doc-text > :first-child{ margin-top:0; }
+  .bubble ul,.bubble ol,.doc-text ul,.doc-text ol{ margin:.5em 0; padding-left:1.5em; }
+  .bubble li,.doc-text li{ margin:.25em 0; }
+  .bubble pre,.doc-text pre{ background:var(--code); border-radius:10px; padding:12px 14px;
+    overflow-x:auto; margin:.7em 0; }
+  .bubble pre code,.doc-text pre code{ background:none; padding:0; font-size:.88em; white-space:pre;
+    font-family:"SFMono-Regular",Consolas,monospace; }
+  .bubble blockquote,.doc-text blockquote{ margin:.6em 0; padding:.2em 0 .2em 1em;
+    border-left:3px solid var(--border); color:var(--muted); }
+  .bubble a,.doc-text a{ color:var(--brand1); text-decoration:underline; }
+  .bubble hr,.doc-text hr{ border:none; border-top:1px solid var(--border); margin:1em 0; }
+  /* текст ответов и документов можно выделять и копировать */
+  .bubble,.doc-text{ user-select:text; -webkit-user-select:text; cursor:auto; }
+  .bubble .math-block,.doc-text .math-block{ overflow-x:auto; overflow-y:hidden; margin:.2em 0; }
+  .bubble .math-block .katex-display,.doc-text .math-block .katex-display{ margin:.4em 0; }
+  .typing span{ display:inline-block; width:7px; height:7px; margin-right:3px; border-radius:50%;
+                background:var(--muted); animation:blink 1.2s infinite both; }
+  .typing span:nth-child(2){ animation-delay:.2s; } .typing span:nth-child(3){ animation-delay:.4s; }
+  @keyframes blink{ 0%,80%,100%{ opacity:.2 } 40%{ opacity:1 } }
+  .srcs{ margin-top:12px; display:flex; flex-wrap:wrap; gap:6px; }
+  .chip{ font-size:12px; color:var(--muted); border:1px solid var(--border); border-radius:20px;
+         padding:4px 10px; cursor:pointer; }
+  .chip:hover{ background:var(--side-hover); color:var(--text); }
+
+  /* композер */
+  .composer-wrap{ padding:10px 24px 20px; }
+  .composer{ max-width:760px; margin:0 auto; display:flex; align-items:flex-end; gap:8px;
+             background:var(--bg); border:1px solid var(--border); border-radius:26px;
+             padding:8px 8px 8px 18px; box-shadow:0 2px 14px rgba(0,0,0,.05); }
+  .composer textarea{ flex:1; border:none; outline:none; resize:none; background:none; color:var(--text);
+     font:inherit; font-size:15px; line-height:1.5; max-height:180px; padding:9px 0; }
+  .send{ width:38px; height:38px; flex:none; border-radius:50%; background:var(--accent);
+         color:var(--accent-fg); display:flex; align-items:center; justify-content:center; }
+  .send:disabled{ opacity:.25; cursor:default; }
+  .send span{ display:flex; align-items:center; justify-content:center; }
+  .send .ic-stop{ display:none; }
+  /* пока ждём ответ — кнопка превращается в «стоп», поле ввода приглушено */
+  body.answering .send{ background:#e5484d; }
+  body.answering .send .ic-send{ display:none; }
+  body.answering .send .ic-stop{ display:flex; }
+  body.answering .composer textarea{ opacity:.55; cursor:not-allowed; }
+  .hint{ max-width:760px; margin:8px auto 0; text-align:center; font-size:12px; color:var(--muted); }
+
+  /* ---------------- Модалки ---------------- */
+  .overlay{ position:fixed; inset:0; background:var(--overlay); display:flex; align-items:center;
+            justify-content:center; z-index:50; padding:20px; }
+  .overlay.hidden{ display:none; }
+  .modal{ background:var(--bg); border:1px solid var(--border); border-radius:18px; width:100%;
+          max-width:520px; max-height:86vh; display:flex; flex-direction:column; overflow:hidden;
+          box-shadow:0 20px 60px rgba(0,0,0,.3); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px;
+               border-bottom:1px solid var(--border); font-weight:600; font-size:16px; }
+  .modal-body{ padding:20px; overflow-y:auto; }
+  .modal-foot{ padding:14px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px; }
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:13px; font-weight:500; margin-bottom:6px; }
+  .field .desc{ font-size:12px; color:var(--muted); margin-top:5px; }
+  .input{ width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px;
+          background:var(--side); color:var(--text); font:inherit; font-size:14px; }
+  .input:focus{ outline:none; border-color:var(--muted); }
+  textarea.input{ resize:vertical; min-height:120px; }
+  .pw{ position:relative; }
+  .pw .toggle{ position:absolute; right:8px; top:50%; transform:translateY(-50%); color:var(--muted); padding:6px; }
+  .btn{ padding:9px 16px; border-radius:10px; font-size:14px; font-weight:500; }
+  .btn.primary{ background:var(--accent); color:var(--accent-fg); }
+  .btn.ghost{ color:var(--muted); } .btn.ghost:hover{ background:var(--side-hover); }
+  .doc-text{ white-space:pre-wrap; line-height:1.65; font-size:14px; }
+  .doc-text.md{ white-space:normal; }        /* markdown-режим: переносы даёт разметка */
+  .doc-text.md p{ margin:0 0 .7em; }
+  .doc-text code{ background:var(--code); padding:2px 6px; border-radius:6px; font-size:.9em;
+                  font-family:"SFMono-Regular",Consolas,monospace; }
+  .doc-text mark{ background:rgba(139,92,246,.28); color:inherit; border-radius:3px;
+                  padding:1px 2px; box-shadow:0 0 0 1px rgba(139,92,246,.4); }
+  .tabs{ display:flex; gap:6px; margin-bottom:16px; }
+  .tab{ padding:7px 14px; border-radius:9px; font-size:14px; color:var(--muted); }
+  .tab.active{ background:var(--side-hover); color:var(--text); }
+
+  /* ---------------- Карта связей (mind map) ---------------- */
+  #m-doc{ z-index:60; }                 /* просмотр документа — поверх карты */
+  .modal.big{ max-width:none; width:94vw; height:88vh; max-height:none; }
+  #m-map .modal-body{ padding:0; position:relative; flex:1; overflow:hidden; }
+  #map-canvas{ display:block; width:100%; height:100%; cursor:grab; touch-action:none; }
+  #map-canvas.grabbing{ cursor:grabbing; }
+  .map-tool{ position:absolute; top:14px; left:14px; z-index:2; display:flex; align-items:center;
+             gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px;
+             padding:8px 14px; font-size:13px; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+  .map-tool input[type=range]{ width:150px; accent-color:var(--brand1); }
+  .map-tool .val{ color:var(--muted); min-width:32px; }
+  .map-legend{ position:absolute; bottom:14px; left:14px; z-index:2; display:flex; flex-wrap:wrap;
+               gap:6px 16px; max-width:62%; background:var(--bg); border:1px solid var(--border);
+               border-radius:12px; padding:10px 14px; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+  .map-legend .lg{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text); }
+  .map-legend .dot{ width:11px; height:11px; border-radius:50%; flex:none; }
+  .map-zoom{ position:absolute; right:14px; bottom:14px; z-index:2; display:flex;
+             flex-direction:column; gap:6px; }
+  .map-zoom button{ width:34px; height:34px; border-radius:9px; background:var(--bg);
+             border:1px solid var(--border); color:var(--text); font-size:19px; line-height:1;
+             box-shadow:0 2px 8px rgba(0,0,0,.08); }
+  .map-zoom button:hover{ background:var(--side-hover); }
+  .map-msg{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+            color:var(--muted); font-size:14px; pointer-events:none; }
+
+  /* ---------------- Тост прогресса загрузки ---------------- */
+  #ingest-toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:40;
+                 width:min(420px, 90vw); background:var(--bg); border:1px solid var(--border);
+                 border-radius:14px; padding:12px 16px; box-shadow:0 8px 30px rgba(0,0,0,.18);
+                 transition:opacity .25s; }
+  #ingest-toast.hidden{ opacity:0; pointer-events:none; }
+  .it-top{ display:flex; justify-content:space-between; gap:12px; font-size:13px; margin-bottom:8px; }
+  .it-top #it-count{ color:var(--muted); font-variant-numeric:tabular-nums; flex:none; }
+  .it-bar{ height:6px; border-radius:4px; background:var(--side-hover); overflow:hidden; }
+  #it-fill{ height:100%; width:0; border-radius:4px;
+            background:linear-gradient(90deg,var(--brand1),var(--brand2)); transition:width .3s ease; }
+  #it-fill.indet{ width:40% !important; animation:it-slide 1.1s ease-in-out infinite; }
+  @keyframes it-slide{ 0%{ margin-left:-40% } 100%{ margin-left:100% } }
+</style>
+<link rel="stylesheet" href="katex/katex.min.css">
+</head>
+<body>
+
+  <!-- ===== Sidebar ===== -->
+  <aside id="sidebar">
+    <div class="brand"><div class="logo"></div> NLM</div>
+    <button class="side-btn" id="btn-add">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Добавить источник
+    </button>
+    <div class="side-lbl">Источники</div>
+    <div id="doclist"><div class="empty">Пока пусто</div></div>
+    <div class="side-foot">
+      <button class="side-btn" id="btn-settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Настройки
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <div id="main">
+    <div class="topbar">
+      <button class="icon-btn" id="btn-toggle" title="Панель">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+      <div class="title">Чат</div>
+      <button class="icon-btn" id="btn-new" title="Новый чат" style="margin-left:auto">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-map" title="Карта связей">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="8" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="M7.3 7.1 16.7 8.9M6.4 8 10.9 15.9M17.4 10.1 13.4 16"/></svg>
+      </button>
+    </div>
+
+    <div id="scroll">
+      <div id="hello">
+        <div class="logo"></div>
+        <h1>Чем помочь?</h1>
+        <p>Задайте вопрос — я найду ответ в ваших источниках и покажу, откуда он.</p>
+      </div>
+      <div id="log" style="display:none"></div>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <textarea id="q" rows="1" placeholder="Спросите по вашим документам…" disabled></textarea>
+        <button class="send" id="send" disabled title="Отправить">
+          <span class="ic-send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+          <span class="ic-stop"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor"/></svg></span>
+        </button>
+      </div>
+      <div class="hint" id="hint">Загрузка моделей…</div>
+    </div>
+  </div>
+
+  <!-- ===== Тост прогресса загрузки документов ===== -->
+  <div id="ingest-toast" class="hidden">
+    <div class="it-top"><span id="it-label">Обработка…</span><span id="it-count"></span></div>
+    <div class="it-bar"><div id="it-fill"></div></div>
+  </div>
+
+  <!-- ===== Модалка: настройки ===== -->
+  <div class="overlay hidden" id="m-settings">
+    <div class="modal">
+      <div class="modal-head">Настройки <button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-body">
+        <div class="field">
+          <label>API-ключ</label>
+          <div class="pw">
+            <input class="input" id="s-key" type="password" autocomplete="off" placeholder="sk-…">
+            <button class="toggle" id="s-key-eye" title="Показать">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="desc">Хранится локально в settings.json на вашем устройстве.</div>
+        </div>
+        <div class="field">
+          <label>Модель</label>
+          <input class="input" id="s-model" placeholder="gpt-4o-mini">
+        </div>
+        <div class="field">
+          <label>Base URL <span style="color:var(--muted)">(необязательно)</span></label>
+          <input class="input" id="s-url" placeholder="https://api.openai.com/v1">
+          <div class="desc">Для своего эндпоинта или OpenAI-совместимого сервера.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>Отмена</button>
+        <button class="btn primary" id="s-save">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Модалка: добавить источник ===== -->
+  <div class="overlay hidden" id="m-add">
+    <div class="modal">
+      <div class="modal-head">Добавить источник <button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-body">
+        <div class="tabs">
+          <button class="tab active" data-tab="file">Файл</button>
+          <button class="tab" data-tab="text">Вставить текст</button>
+        </div>
+        <div class="field">
+          <label>Тег <span style="color:var(--muted)">(необязательно)</span></label>
+          <input class="input" id="a-tag" list="a-tag-list" autocomplete="off"
+                 placeholder="начните вводить или выберите из списка">
+          <datalist id="a-tag-list"></datalist>
+        </div>
+        <div id="tab-file">
+          <button class="btn primary" id="a-file" style="width:100%">📄 Выбрать файл(ы)</button>
+          <div class="desc" style="margin-top:10px; color:var(--muted); font-size:12px">
+            Можно выбрать несколько. Повторная загрузка файла обновляет источник.</div>
+        </div>
+        <div id="tab-text" style="display:none">
+          <div class="field"><input class="input" id="a-title" placeholder="Заголовок"></div>
+          <div class="field"><textarea class="input" id="a-text" placeholder="Текст документа…"></textarea></div>
+          <button class="btn primary" id="a-add" style="width:100%">Добавить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Модалка: просмотр документа ===== -->
+  <div class="overlay hidden" id="m-doc">
+    <div class="modal">
+      <div class="modal-head"><span id="doc-title">Документ</span> <button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-body"><div class="doc-text" id="doc-body"></div></div>
+    </div>
+  </div>
+
+  <!-- ===== Модалка: карта связей ===== -->
+  <div class="overlay hidden" id="m-map">
+    <div class="modal big">
+      <div class="modal-head">Карта связей <button class="icon-btn" data-close>✕</button></div>
+      <div class="modal-body">
+        <canvas id="map-canvas"></canvas>
+        <div class="map-tool">
+          <span>Порог связи</span>
+          <input type="range" id="map-th" min="0.1" max="0.8" step="0.05" value="0.4">
+          <span class="val" id="map-th-val">0.40</span>
+        </div>
+        <div class="map-legend" id="map-legend"></div>
+        <div class="map-zoom">
+          <button id="map-zin" title="Приблизить">+</button>
+          <button id="map-zout" title="Отдалить">−</button>
+        </div>
+        <div class="map-msg" id="map-msg" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+<script src="katex/katex.min.js"></script>
+<script src="katex/auto-render.min.js"></script>
+<script>
+  const $ = s => document.querySelector(s);
+  const api = () => window.pywebview.api;
+  const esc = s => { const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; };
+  // LaTeX-формулы ($$…$$, \[…\], \(…\), $…$) вырезаем ДО markdown-обработки —
+  // иначе esc/«*»/списки покорёжат их содержимое. Одиночный $ не считаем формулой,
+  // если сразу за ним пробел или цифра (чтобы «$5 и $10» не стало математикой).
+  const MATH_RE = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$(?![\s\d])[^$\n]*?(?<!\s)\$/g;
+  // Помечаем формулы: D — блочные ($$…$$, \[…\]), I — строчные (\(…\), $…$).
+  // Блочные потом выносим в отдельный блок, а не в <p> (KaTeX даёт display:block —
+  // такой элемент нельзя класть внутрь <p>, иначе часть движков ломает вёрстку).
+  function protectMath(s, store){
+    return s.replace(MATH_RE, m => {
+      const disp = /^\$\$|^\\\[/.test(m);
+      const k = '@@MATH'+(disp?'D':'I')+store.length+'@@';
+      store.push(m); return k;
+    });
+  }
+  // строчное форматирование сырой строки: сначала экранируем, потом разметка.
+  // Ссылки — только http/https/mailto.
+  function mdInline(s){
+    return esc(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m,txt,url) =>
+        /^(https?:|mailto:)/i.test(url)
+          ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${txt}</a>` : m);
+  }
+  // безопасный мини-markdown: блоки разбираем по СЫРЫМ строкам (иначе esc съест «>»),
+  // а экранирование делаем построчно в mdInline и для содержимого кода
+  function md(src){
+    const math = [];
+    const L = protectMath(String(src ?? ''), math).split('\n');
+    let html = '', i = 0;
+    const isBlock = s => /^(#{1,6}\s|>|\s*[-*+]\s|\s*\d+[.)]\s|```)/.test(s) || /^(\s*[-*_]){3,}\s*$/.test(s)
+                         || /^\s*@@MATHD\d+@@\s*$/.test(s);
+    while(i < L.length){
+      const line = L[i];
+      const dm = line.match(/^\s*(@@MATHD\d+@@)\s*$/);         // блочная формула — свой блок
+      if(dm){ html += '<div class="math-block">'+dm[1]+'</div>'; i++; continue; }
+      if(/^```/.test(line)){                                   // блок кода
+        const code=[]; i++;
+        while(i<L.length && !/^```/.test(L[i])){ code.push(L[i]); i++; }
+        i++; html += '<pre><code>'+esc(code.join('\n'))+'</code></pre>'; continue;
+      }
+      let m = line.match(/^(#{1,6})\s+(.*)$/);                 // заголовок
+      if(m){ const n=m[1].length; html += `<h${n}>`+mdInline(m[2])+`</h${n}>`; i++; continue; }
+      if(/^(\s*[-*_]){3,}\s*$/.test(line)){ html += '<hr>'; i++; continue; }   // разделитель
+      if(/^>\s?/.test(line)){                                  // цитата
+        const q=[];
+        while(i<L.length && /^>\s?/.test(L[i])){ q.push(mdInline(L[i].replace(/^>\s?/,''))); i++; }
+        html += '<blockquote>'+q.join('<br>')+'</blockquote>'; continue;
+      }
+      if(/^\s*[-*+]\s+/.test(line)){                           // маркированный список
+        const it=[];
+        while(i<L.length && /^\s*[-*+]\s+/.test(L[i])){ it.push('<li>'+mdInline(L[i].replace(/^\s*[-*+]\s+/,''))+'</li>'); i++; }
+        html += '<ul>'+it.join('')+'</ul>'; continue;
+      }
+      if(/^\s*\d+[.)]\s+/.test(line)){                         // нумерованный список
+        const it=[];
+        while(i<L.length && /^\s*\d+[.)]\s+/.test(L[i])){ it.push('<li>'+mdInline(L[i].replace(/^\s*\d+[.)]\s+/,''))+'</li>'); i++; }
+        html += '<ol>'+it.join('')+'</ol>'; continue;
+      }
+      if(/^\s*$/.test(line)){ i++; continue; }                 // пустая строка
+      const para=[];                                           // абзац
+      while(i<L.length && !/^\s*$/.test(L[i]) && !isBlock(L[i])){ para.push(mdInline(L[i])); i++; }
+      html += '<p>'+para.join('<br>')+'</p>';
+    }
+    // возвращаем формулы на место (экранированными — как текст для KaTeX)
+    return html.replace(/@@MATH[DI](\d+)@@/g, (m,i)=> esc(math[+i]));
+  }
+  // рендер LaTeX внутри уже вставленного HTML (KaTeX загружен локально)
+  function typeset(el){
+    if(!window.renderMathInElement) return;
+    try{ renderMathInElement(el, {
+      delimiters:[
+        {left:'$$', right:'$$', display:true},
+        {left:'\\[', right:'\\]', display:true},
+        {left:'\\(', right:'\\)', display:false},
+        {left:'$', right:'$', display:false},
+      ], throwOnError:false, ignoredTags:['script','noscript','style','textarea','pre','code'] });
+    }catch(e){}
+  }
+  // отрисовать markdown + формулы в элемент
+  function renderRich(el, src){ el.innerHTML = md(src); typeset(el); }
+  const openM = id => $(id).classList.remove('hidden');
+  const closeM = id => $(id).classList.add('hidden');
+
+  const ICON_DOC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+  const ICON_DEL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+
+  /* ---- источники ---- */
+  // doc_id может быть путём Windows (обратные слэши) — никаких inline onclick,
+  // только программные обработчики с захватом id в замыкании.
+  async function refreshDocs(){
+    const docs = await api().list_documents();
+    const box = $('#doclist');
+    box.innerHTML = '';
+    if(!docs.length){ box.innerHTML = '<div class="empty">Пока пусто</div>'; return; }
+    for(const d of docs){
+      const el = document.createElement('div');
+      el.className = 'doc';
+      el.innerHTML = `<span class="ico">${ICON_DOC}</span>
+        <div class="body"><div class="t">${esc(d.title)}</div><div class="m">${d.chunks} фрагм.</div></div>
+        <button class="del" title="Удалить">${ICON_DEL}</button>`;
+      el.addEventListener('click', () => viewDoc(d.doc_id));
+      el.querySelector('.del').addEventListener('click', e => { e.stopPropagation(); delDoc(d.doc_id); });
+      box.appendChild(el);
+    }
+  }
+  async function delDoc(id){ await api().delete_document(id); refreshDocs(); }
+
+  async function viewDoc(id, start, end){
+    const r = await api().get_document(id);
+    if(!r.ok){ alert(r.error); return; }
+    $('#doc-title').textContent = r.title || 'Документ';
+    const body = $('#doc-body');
+    const t = r.text || '';
+    if(Number.isInteger(start) && Number.isInteger(end) && end > start && end <= t.length){
+      // точная подсветка фрагмента — по сырому тексту (offset'ы указывают в него)
+      body.className = 'doc-text';
+      body.innerHTML = esc(t.slice(0, start)) + '<mark id="hl">' + esc(t.slice(start, end)) + '</mark>' + esc(t.slice(end));
+    } else {
+      // обычный просмотр — красивый markdown + формулы
+      body.className = 'doc-text md';
+      renderRich(body, t);
+    }
+    openM('#m-doc');
+    const hl = document.getElementById('hl');
+    if(hl) setTimeout(() => hl.scrollIntoView({block:'center'}), 60);
+  }
+
+  /* ---- добавление ---- */
+  // Ингест идёт в фоне (эмбеддинг на CPU долгий) — следим за прогрессом опросом.
+  let ingestPolling = false;
+  async function pollIngest(){
+    const s = await api().ingest_status();
+    const t=$('#ingest-toast'), fill=$('#it-fill');
+    t.classList.remove('hidden');
+    if(s.active){
+      $('#it-label').textContent = s.phase || 'Обработка…';
+      if(s.total > 0){
+        fill.classList.remove('indet'); fill.style.marginLeft='0';
+        fill.style.width = Math.round(100*s.done/s.total)+'%';
+        $('#it-count').textContent = s.done+' / '+s.total;
+      } else {
+        fill.classList.add('indet'); $('#it-count').textContent = '';   // фаза без числа
+      }
+      setTimeout(pollIngest, 400);
+    } else {
+      ingestPolling = false;
+      fill.classList.remove('indet'); fill.style.marginLeft='0';
+      const r = s.result || {};
+      if(r.ok){
+        fill.style.width='100%';
+        $('#it-label').textContent = 'Готово'+(r.chunks!=null ? ' · '+r.chunks+' фрагм.' : '');
+        $('#it-count').textContent = '';
+        setTimeout(()=>t.classList.add('hidden'), 1400);
+      } else {
+        $('#it-label').textContent = '⚠ '+(r.error||'Ошибка обработки');
+        $('#it-count').textContent = '';
+        setTimeout(()=>t.classList.add('hidden'), 5000);
+      }
+      refreshDocs();
+    }
+  }
+  function startIngestPoll(){ if(!ingestPolling){ ingestPolling=true; pollIngest(); } }
+
+  // заполняем список существующих тегов для автодополнения
+  async function loadTags(){
+    const tags = await api().get_tags();
+    $('#a-tag-list').innerHTML = tags.map(t => `<option value="${esc(t)}">`).join('');
+  }
+  async function addFile(){
+    const b=$('#a-file'); b.disabled=true; b.textContent='Открываю…';
+    const r = await api().add_files($('#a-tag').value);
+    b.disabled=false; b.textContent='📄 Выбрать файл(ы)';
+    if(r.cancelled) return;
+    if(r.ok && r.started){ $('#a-tag').value=''; closeM('#m-add'); startIngestPoll(); }
+    else alert(r.error||'Ошибка');
+  }
+  async function addText(){
+    const t=$('#a-title').value, txt=$('#a-text').value;
+    if(!txt.trim()) return;
+    const b=$('#a-add'); b.disabled=true; b.textContent='Отправляю…';
+    const r = await api().add_document(t, txt, $('#a-tag').value);
+    b.disabled=false; b.textContent='Добавить';
+    if(r.ok && r.started){ $('#a-title').value=''; $('#a-text').value=''; $('#a-tag').value=''; closeM('#m-add'); startIngestPoll(); }
+    else alert(r.error||'Ошибка');
+  }
+
+  /* ---- чат ---- */
+  function ensureLog(){ $('#hello').style.display='none'; $('#log').style.display='flex'; }
+  // новый чат: сбрасываем историю на бэкенде и очищаем экран
+  async function newChat(){
+    if(document.body.classList.contains('answering')) return;  // не рвём текущий ответ
+    await api().new_chat();
+    $('#log').innerHTML=''; $('#log').style.display='none';
+    $('#hello').style.display='flex';
+  }
+  function bubble(cls, html){
+    ensureLog();
+    const row=document.createElement('div'); row.className='row '+cls;
+    row.innerHTML = (cls==='bot' ? '<div class="avatar"></div>' : '') +
+                    '<div class="bubble">'+html+'</div>';
+    $('#log').appendChild(row); $('#scroll').scrollTop = $('#scroll').scrollHeight;
+    return row.querySelector('.bubble');
+  }
+  // блокируем ввод, пока ждём ответ модели (кнопка при этом становится «стоп»)
+  function setAnswering(on){
+    document.body.classList.toggle('answering', on);
+    $('#q').disabled = on;
+    $('#send').title = on ? 'Остановить' : 'Отправить';
+    $('#q').placeholder = on ? 'Дождитесь ответа…' : 'Спросите по вашим документам…';
+    if(!on) $('#q').focus();
+  }
+  // счётчик запросов: рост номера обесценивает ответ, что придёт после «стоп»
+  let genId = 0;
+  // остановить текущий ответ: разблокировать интерфейс сразу, а бэкенду дать
+  // сигнал прекратить на ближайшей контрольной точке (ответ, пришедший позже,
+  // будет отброшен по несовпадению genId)
+  function stopAsk(){
+    if(!document.body.classList.contains('answering')) return;
+    genId++;
+    try { api().stop(); } catch(e){}
+    const t = $('#log').querySelector('.row.bot .typing');   // убрать пузырь «печатает…»
+    if(t) t.closest('.row').remove();
+    setAnswering(false);
+  }
+  async function ask(){
+    if(document.body.classList.contains('answering')) return;  // ждём предыдущий ответ
+    const q=$('#q').value.trim(); if(!q) return;
+    $('#q').value=''; autoGrow();
+    bubble('user', esc(q));
+    const b = bubble('bot', '<div class="typing"><span></span><span></span><span></span></div>');
+    const my = ++genId;
+    setAnswering(true);
+    try {
+      const r = await api().ask(q);
+      if(my !== genId) return;                                // запрос остановлен — игнорируем
+      if(!r.ok){
+        if(r.cancelled){ b.closest('.row').remove(); return; }
+        b.innerHTML = '⚠ '+esc(r.error); return;
+      }
+      renderRich(b, r.answer);
+      if(r.sources && r.sources.length){
+        const srcs = document.createElement('div'); srcs.className = 'srcs';
+        for(const s of r.sources){
+          const chip = document.createElement('span'); chip.className = 'chip';
+          chip.textContent = `${s.title} · фрагм. ${s.chunk_no}`;
+          // клик открывает документ и подсвечивает именно этот фрагмент
+          chip.addEventListener('click', () => viewDoc(s.doc_id, s.start, s.end));
+          srcs.appendChild(chip);
+        }
+        b.appendChild(srcs);
+      }
+    } finally {
+      if(my === genId) setAnswering(false);                  // не сбрасываем, если уже начат новый/стоп
+    }
+  }
+
+  /* ---- настройки ---- */
+  async function openSettings(){
+    const s = await api().get_settings();
+    // Свой ключ показываем, дефолтный — нет (приходит пустым при using_default).
+    $('#s-key').value = s.api_key||'';
+    $('#s-key').placeholder = s.using_default ? 'Ключ по умолчанию (оставьте пустым)'
+                                              : 'Введите API-ключ';
+    $('#s-model').value = s.model||''; $('#s-url').value = s.base_url||'';
+    $('#s-key').type='password';
+    openM('#m-settings');
+  }
+  async function saveSettings(){
+    await api().save_settings($('#s-key').value.trim(), $('#s-model').value.trim(), $('#s-url').value.trim());
+    closeM('#m-settings');
+  }
+
+  /* ---- карта связей (mind map) ---- */
+  const TAG_PALETTE = ['#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6',
+                       '#ef4444','#14b8a6','#f97316','#a855f7','#22c55e'];
+  const MAP = { canvas:null, ctx:null, W:800, H:600, nodes:[], links:[], nbr:{},
+                colors:{}, theme:null, pos:{}, hover:null, drag:null,
+                dragMoved:false, downPt:null, raf:null, running:false,
+                dpr:1, scale:1, ox:0, oy:0, pan:null };   // камера: масштаб + смещение
+  const MAP_ZMIN=0.2, MAP_ZMAX=5;
+
+  function cssVars(){
+    const cs = getComputedStyle(document.documentElement);
+    const g = n => cs.getPropertyValue(n).trim();
+    MAP.theme = { bg:g('--bg'), text:g('--text'), muted:g('--muted'),
+                  border:g('--border'), accent:g('--brand1') };
+  }
+  function sizeMapCanvas(){
+    const r = $('#m-map .modal-body').getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    MAP.dpr = dpr;
+    MAP.canvas.width = r.width*dpr; MAP.canvas.height = r.height*dpr;
+    MAP.ctx.setTransform(dpr,0,0,dpr,0,0);
+    MAP.W = r.width; MAP.H = r.height;
+  }
+  // приблизить/отдалить так, чтобы точка (sx,sy) экрана осталась на месте
+  function zoomAt(sx, sy, factor){
+    const s0=MAP.scale, s1=Math.max(MAP_ZMIN, Math.min(MAP_ZMAX, s0*factor));
+    if(s1===s0) return;
+    MAP.ox = sx - (sx-MAP.ox)*(s1/s0);
+    MAP.oy = sy - (sy-MAP.oy)*(s1/s0);
+    MAP.scale = s1;
+  }
+  const showMapMsg = t => { const m=$('#map-msg'); m.textContent=t; m.style.display='flex'; };
+  const hideMapMsg = () => { $('#map-msg').style.display='none'; };
+
+  // edges: { a_id: [[b_id, dist], ...] };  verts: { tag: [[doc_id, title], ...] }
+  function buildGraph(edges, verts){
+    const W=MAP.W, H=MAP.H, byId={}, nodes=[];
+    const tags = Object.keys(verts||{});
+    MAP.colors = {};
+    tags.forEach((t,i)=>{
+      MAP.colors[t] = (t==='null'||t==='None') ? (MAP.theme?MAP.theme.muted:'#9b9b9b')
+                                               : TAG_PALETTE[i % TAG_PALETTE.length];
+    });
+    for(const t of tags){
+      for(const pair of verts[t]){
+        const id=pair[0], title=pair[1], p=MAP.pos[id];
+        const n = { id, title:(title||id), tag:t,
+          x: p ? p.x : W/2 + (Math.random()-0.5)*W*0.6,
+          y: p ? p.y : H/2 + (Math.random()-0.5)*H*0.6,
+          vx:0, vy:0, _deg:0 };
+        nodes.push(n); byId[id]=n;
+      }
+    }
+    const links=[], nbr={};
+    nodes.forEach(n => nbr[n.id]=new Set());
+    for(const a in (edges||{})){
+      for(const pair of edges[a]){
+        const b=pair[0], dist=pair[1];
+        if(byId[a] && byId[b]){
+          links.push({ a:byId[a], b:byId[b], dist });
+          byId[a]._deg++; byId[b]._deg++;
+          nbr[a].add(b); nbr[b].add(a);
+        }
+      }
+    }
+    MAP.nodes=nodes; MAP.links=links; MAP.nbr=nbr; MAP.hover=null; MAP.drag=null;
+    renderLegend();
+  }
+  function renderLegend(){
+    const el=$('#map-legend'); el.innerHTML='';
+    for(const t in MAP.colors){
+      const label=(t==='null'||t==='None')?'Без темы':t;
+      const d=document.createElement('div'); d.className='lg';
+      d.innerHTML='<span class="dot" style="background:'+MAP.colors[t]+'"></span>'+esc(label);
+      el.appendChild(d);
+    }
+  }
+  function mapTick(){
+    const N=MAP.nodes, L=MAP.links, W=MAP.W, H=MAP.H;
+    const REP=5200, SPRING=0.02, CENTER=0.008, CLUSTER=0.015, DAMP=0.86;
+    for(let i=0;i<N.length;i++){            // отталкивание всех пар
+      const a=N[i];
+      for(let j=i+1;j<N.length;j++){
+        const b=N[j];
+        let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy; if(d2<0.01) d2=0.01;
+        const d=Math.sqrt(d2), f=REP/d2, fx=f*dx/d, fy=f*dy/d;
+        a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
+      }
+    }
+    for(const l of L){                      // пружины: похожее — ближе
+      const rest=160-(1-l.dist)*90;
+      let dx=l.b.x-l.a.x, dy=l.b.y-l.a.y, d=Math.sqrt(dx*dx+dy*dy); if(d<0.01) d=0.01;
+      const f=SPRING*(d-rest), fx=f*dx/d, fy=f*dy/d;
+      l.a.vx+=fx; l.a.vy+=fy; l.b.vx-=fx; l.b.vy-=fy;
+    }
+    const cx={}, cy={}, cn={};               // центроиды тегов
+    for(const n of N){ cx[n.tag]=(cx[n.tag]||0)+n.x; cy[n.tag]=(cy[n.tag]||0)+n.y; cn[n.tag]=(cn[n.tag]||0)+1; }
+    for(const n of N){
+      const gx=cx[n.tag]/cn[n.tag], gy=cy[n.tag]/cn[n.tag];
+      n.vx += (gx-n.x)*CLUSTER + (W/2-n.x)*CENTER;   // тег тянет к группе, центр — к середине
+      n.vy += (gy-n.y)*CLUSTER + (H/2-n.y)*CENTER;
+    }
+    for(const n of N){
+      if(n===MAP.drag) continue;            // перетаскиваемый узел держим на курсоре
+      n.vx*=DAMP; n.vy*=DAMP; n.x+=n.vx; n.y+=n.vy;
+      if(n.x<24) n.x=24; else if(n.x>W-24) n.x=W-24;
+      if(n.y<24) n.y=24; else if(n.y>H-24) n.y=H-24;
+    }
+  }
+  function mapDraw(){
+    const c=MAP.ctx, t=MAP.theme, W=MAP.W, H=MAP.H, hov=MAP.hover, dpr=MAP.dpr, s=MAP.scale;
+    const nb = hov ? MAP.nbr[hov.id] : null;
+    c.setTransform(dpr,0,0,dpr,0,0);              // чистим в экранных пикселях
+    c.clearRect(0,0,W,H);
+    c.setTransform(dpr*s,0,0,dpr*s, dpr*MAP.ox, dpr*MAP.oy);   // камера: мир → экран
+    for(const l of MAP.links){
+      const sim=1-l.dist, hot = hov && (l.a===hov||l.b===hov);
+      c.strokeStyle = hot ? t.accent : t.muted;
+      c.globalAlpha = hot ? 0.9 : (0.12+sim*0.5);
+      c.lineWidth   = hot ? 2   : (0.6+sim*2);
+      c.beginPath(); c.moveTo(l.a.x,l.a.y); c.lineTo(l.b.x,l.b.y); c.stroke();
+    }
+    c.globalAlpha=1; c.textAlign='center'; c.textBaseline='top'; c.font='12px system-ui, sans-serif';
+    for(const n of MAP.nodes){
+      const adj = hov && (n===hov || (nb && nb.has(n.id)));
+      c.globalAlpha = (hov && !adj) ? 0.22 : 1;
+      const r = 6 + Math.min(n._deg,6);
+      c.fillStyle = MAP.colors[n.tag] || t.muted;
+      c.beginPath(); c.arc(n.x,n.y,r,0,Math.PI*2); c.fill();
+      c.lineWidth=1.5; c.strokeStyle=t.bg; c.stroke();
+      c.fillStyle=t.text;
+      c.fillText(n.title.length>22 ? n.title.slice(0,21)+'…' : n.title, n.x, n.y+r+3);
+    }
+    c.globalAlpha=1;
+  }
+  function mapLoop(){ if(!MAP.running) return; mapTick(); mapDraw(); MAP.raf=requestAnimationFrame(mapLoop); }
+  function startMap(){ if(MAP.running) return; MAP.running=true; cssVars(); mapLoop(); }
+  function stopMap(){
+    MAP.running=false;
+    if(MAP.raf) cancelAnimationFrame(MAP.raf);
+    MAP.raf=null;
+    for(const n of MAP.nodes) MAP.pos[n.id]={x:n.x, y:n.y};   // запомнить раскладку между открытиями
+  }
+  // scrPt — координаты на канвасе (экранные), mapPt — в мире графа (обратная камера)
+  const scrPt = e => { const r=MAP.canvas.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; };
+  const mapPt = e => { const p=scrPt(e); return { x:(p.x-MAP.ox)/MAP.scale, y:(p.y-MAP.oy)/MAP.scale }; };
+  function nodeAt(x,y){
+    for(let i=MAP.nodes.length-1;i>=0;i--){
+      const n=MAP.nodes[i], r=6+Math.min(n._deg,6), dx=x-n.x, dy=y-n.y;
+      if(dx*dx+dy*dy <= (r+5)*(r+5)) return n;
+    }
+    return null;
+  }
+  async function loadMindMap(){
+    try{
+      if(!MAP.theme) cssVars();
+      for(const n of MAP.nodes) MAP.pos[n.id]={x:n.x, y:n.y};   // сохранить раскладку до перестройки
+      const res = await api().mind_map(parseFloat($('#map-th').value));
+      buildGraph(res[0]||{}, res[1]||{});
+      if(!MAP.nodes.length) showMapMsg('Пока нет документов для карты'); else hideMapMsg();
+      startMap();
+    }catch(e){ showMapMsg('Не удалось построить карту: '+e); }
+  }
+  async function openMindMap(){
+    openM('#m-map');
+    MAP.canvas=$('#map-canvas'); MAP.ctx=MAP.canvas.getContext('2d');
+    MAP.scale=1; MAP.ox=0; MAP.oy=0;          // камера в исходное положение
+    sizeMapCanvas();
+    await loadMindMap();
+  }
+  function initMapEvents(){
+    const cv=$('#map-canvas');
+    cv.addEventListener('pointerdown', e=>{
+      const w=mapPt(e), s=scrPt(e), n=nodeAt(w.x,w.y);
+      MAP.downPt=s;                            // порог «клик vs перетаскивание» — в экранных px
+      if(n){ MAP.drag=n; MAP.dragMoved=false; }
+      else { MAP.pan={sx:s.x, sy:s.y, ox:MAP.ox, oy:MAP.oy}; }   // тащим фон = панорама
+      cv.setPointerCapture(e.pointerId); cv.classList.add('grabbing');
+    });
+    cv.addEventListener('pointermove', e=>{
+      const s=scrPt(e);
+      if(MAP.drag){
+        if(Math.hypot(s.x-MAP.downPt.x, s.y-MAP.downPt.y)>3) MAP.dragMoved=true;
+        const w=mapPt(e); MAP.drag.x=w.x; MAP.drag.y=w.y; MAP.drag.vx=0; MAP.drag.vy=0;
+      } else if(MAP.pan){
+        MAP.ox = MAP.pan.ox + (s.x-MAP.pan.sx);
+        MAP.oy = MAP.pan.oy + (s.y-MAP.pan.sy);
+      } else {
+        const w=mapPt(e); MAP.hover = nodeAt(w.x,w.y);
+        cv.style.cursor = MAP.hover ? 'pointer' : 'grab';
+      }
+    });
+    cv.addEventListener('pointerup', ()=>{
+      cv.classList.remove('grabbing');
+      if(MAP.drag){ const n=MAP.drag; MAP.drag=null; if(!MAP.dragMoved) viewDoc(n.id); }  // клик без сдвига = открыть документ
+      MAP.pan=null;
+    });
+    // колесо — зум к курсору; кнопки — к центру
+    cv.addEventListener('wheel', e=>{ e.preventDefault(); const s=scrPt(e);
+      zoomAt(s.x, s.y, e.deltaY<0 ? 1.1 : 1/1.1); }, {passive:false});
+    $('#map-zin').onclick  = ()=> zoomAt(MAP.W/2, MAP.H/2, 1.2);
+    $('#map-zout').onclick = ()=> zoomAt(MAP.W/2, MAP.H/2, 1/1.2);
+    $('#map-th').addEventListener('input', e=>{ $('#map-th-val').textContent=parseFloat(e.target.value).toFixed(2); });
+    $('#map-th').addEventListener('change', loadMindMap);   // перестроить при отпускании ползунка
+    // закрытие карты (крестик или клик по фону) — остановить симуляцию
+    $('#m-map').addEventListener('click', e=>{ if(e.target===$('#m-map')||e.target.closest('[data-close]')) stopMap(); });
+    window.addEventListener('resize', ()=>{ if(MAP.running) sizeMapCanvas(); });
+  }
+
+  /* ---- composer autogrow ---- */
+  function autoGrow(){ const t=$('#q'); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,180)+'px'; }
+
+  async function poll(){
+    const s = await api().status();
+    if(s.error){ $('#hint').textContent='Ошибка загрузки модели: '+s.error; return; }
+    if(s.ready){ $('#q').disabled=false; $('#send').disabled=false; $('#hint').textContent=''; }
+    else setTimeout(poll, 700);
+  }
+
+  window.addEventListener('pywebviewready', () => {
+    // sidebar
+    $('#btn-toggle').onclick = () => $('#sidebar').classList.toggle('collapsed');
+    $('#btn-new').onclick = newChat;
+    $('#btn-add').onclick = () => { $('#a-tag').value=''; loadTags(); openM('#m-add'); };
+    $('#btn-settings').onclick = openSettings;
+    $('#btn-map').onclick = openMindMap; initMapEvents();
+    // модалки: крестики/фон
+    document.querySelectorAll('[data-close]').forEach(b => b.onclick = e => e.target.closest('.overlay').classList.add('hidden'));
+    document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.add('hidden'); }));
+    // добавление
+    $('#a-file').onclick = addFile; $('#a-add').onclick = addText;
+    document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      $('#tab-file').style.display = t.dataset.tab==='file'?'block':'none';
+      $('#tab-text').style.display = t.dataset.tab==='text'?'block':'none';
+    });
+    // настройки
+    $('#s-save').onclick = saveSettings;
+    $('#s-key-eye').onclick = () => { const k=$('#s-key'); k.type = k.type==='password'?'text':'password'; };
+    // чат
+    $('#send').onclick = () => document.body.classList.contains('answering') ? stopAsk() : ask();
+    const q=$('#q');
+    q.addEventListener('input', autoGrow);
+    q.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+    refreshDocs(); poll();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+# --- секреты (НЕ коммитить!) ---
+.env
+default_key.enc
+
+# --- окружение и сборка ---
+.venv/
+venv/
+build/
+dist/
+*.spec.bak
+
+# --- кэш Python ---
+__pycache__/
+*.pyc
+*.pyo
+
+# --- модель и крупные артефакты ---
+model_qwen/
+*.tar.gz
+
+# --- локальные данные/логи ---
+*.log
+
+.vscode/
+BUILD_WINDOWS.md

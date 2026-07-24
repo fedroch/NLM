@@ -1,0 +1,30 @@
+torch==2.13.0
+sentence-transformers==5.6.0
+transformers==5.13.1
+tokenizers==0.22.2
+huggingface-hub==1.23.0
+safetensors==0.8.0
+datasets==5.0.0
+
+numpy==2.5.1
+scipy==1.18.0
+scikit-learn==1.9.0
+pandas==3.0.3
+optuna==4.9.0
+tqdm==4.68.4
+
+pgserver==0.1.4
+pgvector==0.5.0
+psycopg[binary]==3.3.4
+SQLAlchemy==2.0.51
+
+openai==2.46.0
+pydantic==2.13.4
+pywebview==6.2.1
+cryptography==49.0.0
+
+# извлечение текста из PDF/DOCX/PPTX/XLSX/HTML/EPUB и др.
+# ВНИМАНИЕ: ядро markitdown тянет magika -> onnxruntime (~57 МБ нативной либы)
+markitdown[pdf,docx,pptx,xlsx,xls]==0.1.6
+
+pyinstaller==6.11.1
